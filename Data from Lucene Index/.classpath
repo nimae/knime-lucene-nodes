@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="con" path="org.eclipse.pde.core.requiredPlugins"/>
+	<classpathentry kind="lib" path="lib/lucene-core-4.7.0.jar">
+		<attributes>
+			<attribute name="javadoc_location" value="file:/D:/Downloads/Sources/Search/Lucene/lucene-4.7.0/docs/core/"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="lib/lucene-analyzers-common-4.7.0.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
