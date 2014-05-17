@@ -4,6 +4,8 @@ import ir.nimae.utils.JarLoader;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -87,7 +89,7 @@ public class IndexWithLuceneNodeModel extends NodeModel {
 		
 		LOGGER.info("ctor 1");
 		
-		//exe = Executors.newCachedThreadPool();
+		exe = Executors.newFixedThreadPool(16);
 		
 		LOGGER.info("ctor 2");
 	}
@@ -101,15 +103,15 @@ public class IndexWithLuceneNodeModel extends NodeModel {
 	
 	private Directory dir;
 	
-	//private Executor exe;
+	private Executor exe;
 	
 	private void index(IndexWriter writer, String id, String text) {
 		final IndexWriter _writer = writer;
 		final String _id = id;
 		final String _text = text;
-		//exe.execute(new Runnable() {
-		//	@Override
-		//	public void run() {
+		exe.execute(new Runnable() {
+			@Override
+			public void run() {
 				Document doc = new Document();
 				doc.add(new Field("id", _id, FIELD_TYPE1));
 				doc.add(new Field("text", _text, FIELD_TYPE2));
@@ -118,8 +120,8 @@ public class IndexWithLuceneNodeModel extends NodeModel {
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
-		//	}
-		//});
+			}
+		});
 	}
 	
     /**

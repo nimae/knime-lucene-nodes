@@ -1,0 +1,15 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: LibSVMWriter-Node extension for KNIME Workbench
+Bundle-SymbolicName: ir.nimae.knime.libsvm;singleton:=true
+Bundle-Version: 1.0.0
+Bundle-ClassPath: libsvmwriter.jar
+Bundle-Activator: ir.nimae.knime.LibSVMWriterNodePlugin
+Bundle-Vendor: 
+Require-Bundle: org.eclipse.core.runtime,
+ org.knime.workbench.core,
+ org.knime.workbench.repository,
+ org.knime.base
+Bundle-ActivationPolicy: lazy
+Export-Package: ir.nimae.knime
+
