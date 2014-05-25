@@ -66,7 +66,7 @@ public class LibSVMWriterNodeModel extends NodeModel {
     		
     		for (int i = 0; i < ccols; i++) {
     			double v = ((DoubleCell)row.getCell(i)).getDoubleValue();
-    			if (v != 0) w.write("\t" + i + ":" + v);
+    			if (v != 0) w.write("\t" + (i+1) + ":" + v);
     		}
     		w.write("\n");
     		w.flush();
