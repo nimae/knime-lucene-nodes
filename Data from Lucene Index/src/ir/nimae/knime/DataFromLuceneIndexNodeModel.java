@@ -10,6 +10,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 import org.apache.lucene.index.AtomicReader;
 import org.apache.lucene.index.AtomicReaderContext;
@@ -18,7 +21,6 @@ import org.apache.lucene.index.DocsEnum;
 import org.apache.lucene.index.MultiFields;
 import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.knime.core.data.DataCell;
 import org.knime.core.data.DataColumnSpec;
@@ -100,6 +102,29 @@ public class DataFromLuceneIndexNodeModel extends NodeModel {
     
     private JarLoader jarLoader;
     
+    private static class ProgressMonitor {
+    	public ProgressMonitor(ExecutionContext exec, ExecutorService service, int rows) {
+    		this.exec = exec;
+    		this.service = service;
+    		this.rows = rows;
+		}
+    	private final ExecutionContext exec;
+    	private final ExecutorService service;
+    	private final double rows;
+    	private int c = 0;
+    	public void inc() throws CanceledExecutionException {
+    		c++;
+			exec.setMessage(c + " docs processed");
+			exec.setProgress(c / rows);
+			try {
+				exec.checkCanceled();
+			} catch (CanceledExecutionException e) {
+				service.shutdown();
+				throw e;
+			}
+    	}
+    }
+    
     /**
      * {@inheritDoc}
      */
@@ -108,7 +133,7 @@ public class DataFromLuceneIndexNodeModel extends NodeModel {
             final ExecutionContext exec) throws Exception {
     	
     	Determiner determiner = null;
-    	Evaluator evaluator;
+    	final Evaluator evaluator;
     	
 		String className = determinerClass.getStringValue();
 		if (className != null && !className.isEmpty()) {
@@ -133,8 +158,8 @@ public class DataFromLuceneIndexNodeModel extends NodeModel {
     	DirectoryReader reader = DirectoryReader.open(FSDirectory.open(path));
     	
     	TermsEnum tenum = MultiFields.getTerms(reader, "text").iterator(null);
-    	List<String> usableTerms = new ArrayList<String>();
-    	Map<String, Integer> docFreqs = new HashMap<String, Integer>();
+    	final List<String> usableTerms = new ArrayList<String>();
+    	final Map<String, Integer> docFreqs = new HashMap<String, Integer>();
     	BytesRef term;
     	while ((term = tenum.next()) != null) {
     		int df = tenum.docFreq();
@@ -149,8 +174,8 @@ public class DataFromLuceneIndexNodeModel extends NodeModel {
     	}
     	
     	// dimensions
-    	int ccols = usableTerms.size();
-    	double crows = reader.getDocCount("text");
+    	final int ccols = usableTerms.size();
+    	int crows = reader.getDocCount("text");
     	
     	// creating columns
     	DataColumnSpec[] columns = new DataColumnSpec[ccols + 1];
@@ -164,80 +189,70 @@ public class DataFromLuceneIndexNodeModel extends NodeModel {
     	}
     	
     	// create output table
-    	BufferedDataContainer container = exec.createDataContainer(
+    	final BufferedDataContainer container = exec.createDataContainer(
     			new DataTableSpec(columns));
     	
-    	int c = 1;
     	exec.setProgress(0);
+    	
+    	ExecutorService service = Executors.newFixedThreadPool(16);
+    	final Semaphore semaphore = new Semaphore(0);
+    	int count = 0;
+    	
+    	final ProgressMonitor monitor = new ProgressMonitor(exec, service, crows);
     	
     	// for each atomic reader
     	for (AtomicReaderContext context : reader.leaves()) {
-    		AtomicReader r = context.reader();
-    		
-    		// for each term in each doc
-    		for (int docId = 0; docId < r.numDocs(); docId++) {
-				String id = r.document(docId).get("id");
-				
-    	    	// create table rows
-    	    	DataCell[] cells = new DataCell[ccols + 1];
-	    		cells[0] = new StringCell(id);
-	    		
-				tenum = r.getTermVector(docId, "text").iterator(tenum);
-	        	while ((term = tenum.next()) != null) {
-	        		String t = term.utf8ToString();
-	        		if (usableTerms.contains(t)) {
-	        			DocsEnum denum = tenum.docs(null, null);
-	        			denum.nextDoc();
-	        			double v = evaluator.evaluate(denum.freq(), docFreqs.get(t));
-    	    			cells[usableTerms.indexOf(t) + 1] = new DoubleCell(v);
-	        		}
-	        	}
-	        	
-	        	// filling other cells with zero
-	        	for (int i = 1; i < ccols + 1; i++)
-	        		if (cells[i] == null)
-	        			cells[i] = new DoubleCell(0);
-	        	
-	    		DefaultRow row = new DefaultRow(id, cells);
-	    		container.addRowToTable(row);
-	    		
-	    		exec.setProgress(c++ / crows);
-    		}
+    		final AtomicReader r = context.reader();
+    		service.execute(new Runnable() {
+    			@Override
+    			public void run() {
+    				try {
+    					TermsEnum tenum = null;
+    					BytesRef term;
+    		    		// for each term in each doc
+    		    		for (int docId = 0; docId < r.numDocs(); docId++) {
+    						String id = r.document(docId).get("id");
+    						
+    		    	    	// create table rows
+    		    	    	DataCell[] cells = new DataCell[ccols + 1];
+    			    		cells[0] = new StringCell(id);
+    			    		
+    						tenum = r.getTermVector(docId, "text").iterator(tenum);
+    			        	while ((term = tenum.next()) != null) {
+    			        		String t = term.utf8ToString();
+    			        		if (usableTerms.contains(t)) {
+    			        			DocsEnum denum = tenum.docs(null, null);
+    			        			denum.nextDoc();
+    			        			double v = evaluator.evaluate(denum.freq(), docFreqs.get(t));
+    		    	    			cells[usableTerms.indexOf(t) + 1] = new DoubleCell(v);
+    			        		}
+    			        	}
+    			        	
+    			        	// filling other cells with zero
+    			        	for (int i = 1; i < ccols + 1; i++)
+    			        		if (cells[i] == null)
+    			        			cells[i] = new DoubleCell(0);
+    			        	
+    			    		DefaultRow row = new DefaultRow(id, cells);
+    			    		synchronized (container) {
+    			    			container.addRowToTable(row);
+    			    		}
+    			    		
+    			    		monitor.inc();
+    		    		}
+    				} catch (CanceledExecutionException e) {
+    					return;
+    				} catch (Exception e) {
+    				} finally {
+    					semaphore.release();
+    				}
+    			}
+    		});
+    		count++;
     	}
     	
-    	/*
-    	BytesRef term;
-    	DocsEnum denum = null;
-    	Bits bits = new Bits.MatchAllBits(crows);
-    	int c = 0;
-    	
-    	while ((term = tenum.next()) != null) {
-    		denum = tenum.docs(bits, denum);
-    		
-    		// feature selection
-    		double df = (double)tenum.docFreq();
-    		if (determiner == null) {
-    			if (df < dfFromTo.getMinRange() || df > dfFromTo.getMaxRange()) continue;
-    		} else {
-    			if (!determiner.determine(df)) continue;
-    		}
-    		
-    		// create column for this term
-    		String t = term.utf8ToString();
-    		creator.setName(t);
-    		columns[c + 1] = creator.createSpec();
-    		
-    		data[c] = new double[crows];
-    		
-    		// evaluating value
-    		int docId;
-    		while ((docId = denum.nextDoc()) != DocsEnum.NO_MORE_DOCS) {
-    			data[c][docId] = evaluator.evaluate(denum.freq(), df);
-    		}
-    		
-    		c++;
-    	}
-    	*/
+		semaphore.acquire(count);
+    	reader.close();
     	
     	container.close();
         return new BufferedDataTable[]{ container.getTable() };
