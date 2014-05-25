@@ -105,18 +105,15 @@ public class IndexWithLuceneNodeModel extends NodeModel {
 	
 	private Executor exe;
 	
-	private void index(IndexWriter writer, String id, String text) {
-		final IndexWriter _writer = writer;
-		final String _id = id;
-		final String _text = text;
+	private void index(final IndexWriter writer, final String id, final String text) {
 		exe.execute(new Runnable() {
 			@Override
 			public void run() {
 				Document doc = new Document();
-				doc.add(new Field("id", _id, FIELD_TYPE1));
-				doc.add(new Field("text", _text, FIELD_TYPE2));
+				doc.add(new Field("id", id, FIELD_TYPE1));
+				doc.add(new Field("text", text, FIELD_TYPE2));
 				try {
-					_writer.addDocument(doc);
+					writer.addDocument(doc);
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
